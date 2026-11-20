@@ -1,0 +1,54 @@
+{
+  "camera": {
+    "source": "usb",
+    "usb_index": 0,
+    "esp32_cam_url": "http://192.168.1.50:81/stream",
+    "frame_width": 640,
+    "frame_height": 480
+  },
+  "detection": {
+    "calibration_frames": 90,
+    "ear_threshold_factor": 0.55,
+    "require_both_eyes_closed": true,
+    "speed_reduce_warning_seconds": 2.0,
+    "pullover_emergency_seconds": 5.0,
+    "maneuver_duration_seconds": 4.8,
+    "in_cabin_repeat_interval_seconds": 3.0
+  },
+  "vehicle": {
+    "car_number": "EGY-7894",
+    "use_fixed_location": true,
+    "show_location_name": false,
+    "latitude": 31.209093,
+    "longitude": 29.923094,
+    "location_name": "Specialized Scientific Programs, Faculty of Engineering",
+    "maps_url": "https://maps.app.goo.gl/BcYvS5KqdEdAYyi4A"
+  },
+  "alerter": {
+    "callmebot": {
+      "enabled": true,
+      "phone_number": "+201092285222",
+      "api_key": "YOUR_CALLMEBOT_API_KEY",
+      "enable_voice_call": true,
+      "enable_whatsapp_text": true,
+      "spoken_message": "Warning! Emergency alert! The driver has fallen asleep at the wheel. Emergency pull-over and braking activated. Vehicle is stopped safely in the right lane.",
+      "voice_language": "en-US-Standard-C",
+      "repeat_count": 2,
+      "play_in_cabin_audio": true,
+      "cooldown_seconds": 60
+    },
+    "telegram": {
+      "enabled": true,
+      "bot_token": "8523992710:AAFJNT0gFdTvJZUfzhwIRKWT7xDnhUY_ddQ",
+      "chat_id": "1605794011",
+      "repeat_interval_seconds": 25,
+      "send_native_map_pin": true,
+      "include_url_in_message": false
+    }
+  },
+  "esp32": {
+    "enabled": false,
+    "port": "/dev/ttyUSB0",
+    "baudrate": 115200
+  }
+}
