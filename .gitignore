@@ -47,4 +47,3 @@ htmlcov/
 # Local secrets and developer environment
 .env
 .env.*
-!.env.example
