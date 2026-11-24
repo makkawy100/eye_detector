@@ -1,10 +1,17 @@
-"""Local-only audible alarm. Generates a pulsing two-tone warning, not speech."""
+"""Local-only audible alert. Speaks a clear "Wake up!" voice prompt, fully offline.
+
+The voice prompt is a small WAV file bundled with the project
+(``sounds/wake_up.wav``), so no speech engine, network service, or extra
+package is needed at runtime. If the file is ever missing, a synthesized
+two-tone alarm is used instead so the driver still gets a loud warning.
+"""
 
 import logging
 import math
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -12,6 +19,9 @@ import wave
 from pathlib import Path
 
 logger = logging.getLogger("LocalAudioAlert")
+
+# Bundled spoken prompt, played as-is. Natural voice, generated offline.
+_VOICE_WAV = Path(__file__).resolve().parent / "sounds" / "wake_up.wav"
 
 
 class LocalAudioAlert:
@@ -42,8 +52,28 @@ class LocalAudioAlert:
             wav_file.setframerate(sample_rate)
             wav_file.writeframes(frames)
 
+    @staticmethod
+    def _play_wav(wav_path: Path) -> bool:
+        """Play a WAV file locally with whatever the OS already has. True if started."""
+        if sys.platform.startswith("win"):
+            import winsound
+
+            winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
+            return True
+        if sys.platform == "darwin":
+            player = shutil.which("afplay")
+            if player:
+                subprocess.run([player, str(wav_path)], check=False, timeout=10)
+                return True
+            return False
+        player = shutil.which("paplay") or shutil.which("aplay")
+        if player:
+            subprocess.run([player, str(wav_path)], check=False, timeout=10)
+            return True
+        return False
+
     def play_alert(self, _message: str = ""):
-        """Play a short local alarm sound without speech or network requests."""
+        """Play the spoken "Wake up!" prompt locally; no network or cloud services."""
         now = time.time()
         with self._lock:
             if now - self._last_play_time < self.minimum_interval_seconds or self._playing:
@@ -53,17 +83,22 @@ class LocalAudioAlert:
 
         def play():
             try:
-                player = shutil.which("paplay") or shutil.which("aplay")
-                if player:
-                    with tempfile.TemporaryDirectory(prefix="eye-detector-alarm-") as temp_dir:
-                        alarm = Path(temp_dir) / "warning.wav"
-                        self._make_alarm(alarm)
-                        subprocess.run([player, str(alarm)], check=False, timeout=4)
-                else:
-                    # Terminal bell is a non-verbal fallback when no audio player exists.
-                    print("\a", end="", flush=True)
+                played = False
+                if _VOICE_WAV.is_file():
+                    played = self._play_wav(_VOICE_WAV)
+                if not played:
+                    # Voice file missing or no player found: fall back to the
+                    # synthesized alarm so the warning is still audible.
+                    player = shutil.which("paplay") or shutil.which("aplay")
+                    if player and not sys.platform.startswith("win"):
+                        with tempfile.TemporaryDirectory(prefix="eye-detector-alarm-") as temp_dir:
+                            alarm = Path(temp_dir) / "warning.wav"
+                            self._make_alarm(alarm)
+                            subprocess.run([player, str(alarm)], check=False, timeout=4)
+                    else:
+                        print("\a", end="", flush=True)
             except Exception as exc:
-                logger.debug("Local alarm playback failed: %s", exc)
+                logger.debug("Local audio alert playback failed: %s", exc)
                 print("\a", end="", flush=True)
             finally:
                 with self._lock:
