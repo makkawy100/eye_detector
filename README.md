@@ -1,36 +1,86 @@
-# Driver Drowsiness Detection & Emergency Response
+# 🚗 Driver Drowsiness Emergency Brake & Autonomous Pull-Over System
 
-A computer-vision project using MediaPipe Face Mesh and Eye Aspect Ratio (EAR) to detect prolonged eye closure. It includes an ESP32 serial-control bridge, local alarm sounds, and optional Telegram emergency alerts. The project is a prototype and is not a certified or road-safe autonomous driving system.
+An intelligent, real-time driver safety system built with **Computer Vision (MediaPipe Face Mesh + Eye Aspect Ratio)** and an **autonomous 3-stage emergency response** pipeline.
 
-## Detection and response
+---
 
-- Calibrates an open-eye baseline over 90 frames, then requires both eyes below the configured threshold.
-- At 2 seconds of closure, sends `SLOW_50` to the controller and plays a local alarm sound.
-- At 5 seconds, sends `EMERGENCY_PULLOVER`; after the configured maneuver interval or stop feedback, it can send a Telegram alert.
-- Reopening the eyes restores normal operation and re-arms alerts.
+## 🌟 Key Features
 
-The ESP32, steering and braking behavior depends on external hardware and firmware. This repository's software simulation does not establish that a real vehicle will pull over safely. Do not test on public roads.
+1. **Precision Eye Tracking (MediaPipe 468 Face Mesh)**:
+   - Tracks 6 landmarks per eye to calculate Eye Aspect Ratio (EAR).
+   - **Two-Eye Requirement**: Requires both eyes to be closed to prevent false alarms on winking or glancing.
+   - **Dynamic Personal Calibration**: Automatically calibrates to the driver's normal open-eye baseline over 90 frames, with a `0.55` threshold factor so 50% squints do not trigger false alarms.
 
-## Project layout
+2. **Autonomous 3-Stage Emergency Response**:
+   - **Stage 1 (At 2.0s eye closure)**: Sounds an audio alert (*"Warning! Wake up! Speed reduced by 50 percent!"*) and sends `SLOW_50` to cut speed by 50%.
+   - **Early Wakeup Recovery**: Reopening eyes between 2.0s and 5.0s immediately restores `NORMAL` full speed.
+   - **Stage 2 (At 5.0s eye closure)**: Triggers `EMERGENCY_PULLOVER` for autonomous right-lane change maneuver and progressive braking to a full stop.
+   - **Stage 3 (After Full Stop)**: Dispatches zero-cost emergency alerts:
+     - **Telegram Bot (@Driver7_bot)**: High-priority message with Car Number (`EGY-7894`), exact coordinates, and interactive native GPS map pin (`sendLocation`).
+     - **In-Cabin Continuous Alarm**: Repeating audio warning every 3 seconds until the driver is confirmed awake.
 
-- `main.py`: application and Telegram test command.
-- `vision_engine/`: eye detection, calibration and ESP32 serial bridge.
-- `emergency_alerter/telegram_notifier.py`: optional Telegram text and map-pin alerts.
-- `emergency_alerter/local_audio_alert.py`: local-only alarm sound; no network calls.
-- `emergency_alerter/location_service.py`: location lookup for alerts.
-- `tests/`: unit and pipeline tests.
-- `config.json`: non-secret settings.
+3. **Software Simulation & Hardware Bridge**:
+   - Supports direct serial communication with ESP32 microcontrollers over USB UART (115200 baud).
+   - Operates in full software simulation mode when hardware is not connected.
 
-## How to launch
+---
 
-From the project folder, run:
+## 📁 Project Architecture
 
+```
+eye/
+├── main.py                          # Application entry point & CLI diagnostic tool
+├── config.json                      # System thresholds, car plate, credentials
+├── requirements.txt                 # Pinned dependencies
+├── EXPLANATION_CHARTS.md            # Mermaid diagrams (FSM, Sequence, Architecture)
+├── vision_engine/
+│   ├── detector.py                  # Real-time detection loop & 3-stage state machine
+│   ├── calibrator.py                # Personalized baseline EAR calibrator
+│   ├── ear_calculator.py            # 6-point Euclidean distance EAR calculations
+│   └── esp32_serial_bridge.py       # Serial driver with software simulation fallback
+├── emergency_alerter/
+│   ├── telegram_notifier.py         # Telegram Bot dispatcher (clean text + GPS pin)
+│   └── location_service.py          # Fixed / GPS / IP geolocation resolver
+└── tests/
+    ├── test_ear.py                  # Unit tests for EAR math & calibration
+    └── test_pipeline.py             # Integration tests for 3-stage emergency sequence
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Installation
+```bash
+git clone https://github.com/makkawy100/eye_detector.git
+cd eye_detector
+pip install -r requirements.txt
+```
+
+### 2. Run Live Detection
 ```bash
 python3 main.py
 ```
 
-Dependencies: install packages listed in `requirements.txt` if they are not already installed.
+### 3. Test Emergency Dispatchers
+- **Test Telegram GPS Pin & Coordinates**:
+  ```bash
+  python3 main.py --test-telegram
+  ```
+- **Test WhatsApp Voice Call**:
+  ```bash
+  python3 main.py --test-call
+  ```
 
-Run tests with `PYTHONPATH=. python3 -m unittest discover tests`.
+### 4. Run Automated Test Suite
+```bash
+PYTHONPATH=. python3 -m unittest discover tests
+```
 
-Press `Q` to quit, `C` to recalibrate, and `R` to reset the emergency state.
+---
+
+## ⌨️ Real-Time Keyboard Controls
+- `Q`: Quit detection loop.
+- `C`: Recalibrate baseline EAR.
+- `T`: Trigger manual test call.
+- `R`: Reset emergency state and restore normal driving.
