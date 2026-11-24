@@ -28,8 +28,8 @@ class TelegramNotifier:
         show_location_name: bool = False,
     ):
         """
-        :param bot_token: Telegram Bot Token (8523992710:AAFJNT0...)
-        :param chat_id: Telegram Chat ID of recipient (1605794011)
+        :param bot_token: Telegram bot token from environment
+        :param chat_id: Telegram chat identifier from environment
         :param car_number: License plate / vehicle identifier
         :param latitude: GPS latitude
         :param longitude: GPS longitude
@@ -83,7 +83,7 @@ class TelegramNotifier:
         Repeats every repeat_interval_seconds as long as emergency continues.
         """
         if not self.is_configured():
-            logger.warning("[Telegram] Bot credentials not configured in config.json.")
+            logger.warning("[Telegram] Bot credentials are not configured in the environment.")
             return False
 
         now = time.time()

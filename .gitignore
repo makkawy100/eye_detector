@@ -43,3 +43,8 @@ htmlcov/
 
 # Logs
 *.log
+
+# Local secrets and developer environment
+.env
+.env.*
+!.env.example

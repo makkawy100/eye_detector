@@ -1,8 +1,4 @@
-"""
-Driver Drowsiness Detector & Real-time Vision Engine
-Combines MediaPipe Face Mesh, Eye Aspect Ratio (EAR), Personalized Calibration,
-and automated emergency triggers (CallMeBot WhatsApp Voice Call & ESP32 control).
-"""
+"""Driver drowsiness detector with local warnings and optional Telegram alerts."""
 
 import cv2
 import mediapipe as mp
@@ -19,7 +15,7 @@ from vision_engine.ear_calculator import (
     RIGHT_EYE_LANDMARKS,
 )
 from vision_engine.calibrator import EARCalibrator
-from emergency_alerter.callmebot_notifier import CallMeBotNotifier
+from emergency_alerter.local_audio_alert import LocalAudioAlert
 from emergency_alerter.telegram_notifier import TelegramNotifier
 from emergency_alerter.location_service import LocationService
 from vision_engine.esp32_serial_bridge import ESP32SerialBridge
@@ -41,7 +37,7 @@ class DrowsinessDetector:
         self.speed_reduce_warning_seconds = det_cfg.get("speed_reduce_warning_seconds", 2.0)
         self.pullover_emergency_seconds = det_cfg.get("pullover_emergency_seconds", 5.0)
         self.maneuver_duration_seconds = det_cfg.get("maneuver_duration_seconds", 4.8)
-        self.in_cabin_repeat_interval = det_cfg.get("in_cabin_repeat_interval_seconds", 3.0)
+        self.local_audio_repeat_interval = det_cfg.get("local_audio_repeat_interval_seconds", 3.0)
 
         # Calibrator
         self.calibrator = EARCalibrator(
@@ -49,21 +45,10 @@ class DrowsinessDetector:
             threshold_factor=self.threshold_factor,
         )
 
-        # WhatsApp Alerter
-        alerter_cfg = self.config.get("alerter", {}).get("callmebot", {})
-        self.alerter = CallMeBotNotifier(
-            phone_number=alerter_cfg.get("phone_number", ""),
-            api_key=alerter_cfg.get("api_key", ""),
-            cooldown_seconds=alerter_cfg.get("cooldown_seconds", 60),
-            enable_voice_call=alerter_cfg.get("enable_voice_call", True),
-            enable_text_message=alerter_cfg.get("enable_whatsapp_text", True),
-            spoken_message=alerter_cfg.get("spoken_message"),
-            voice_lang=alerter_cfg.get("voice_language", "en-US-Standard-C"),
-            repeat_count=alerter_cfg.get("repeat_count", 2),
-            play_in_cabin_audio=alerter_cfg.get("play_in_cabin_audio", True),
-        )
+        # Local audio warnings; no phone call or messaging service is invoked.
+        self.local_audio = LocalAudioAlert()
 
-        # Location Service (Configured with user's exact coordinates)
+        # Location Service
         veh_cfg = self.config.get("vehicle", {})
         self.location_service = LocationService(
             default_lat=veh_cfg.get("latitude", 31.209093),
@@ -75,12 +60,14 @@ class DrowsinessDetector:
             gps_baudrate=veh_cfg.get("gps_baudrate", 9600),
         )
 
-        # Telegram Notifier (Message only with Car Number & GPS Location)
+        # Telegram credentials are supplied by environment variables, not config files.
         tg_cfg = self.config.get("alerter", {}).get("telegram", {})
-        self.telegram_enabled = tg_cfg.get("enabled", False)
+        bot_token = os.getenv(tg_cfg.get("bot_token_env", "TELEGRAM_BOT_TOKEN"), "")
+        chat_id = os.getenv(tg_cfg.get("chat_id_env", "TELEGRAM_CHAT_ID"), "")
+        self.telegram_enabled = bool(tg_cfg.get("enabled", False) and bot_token and chat_id)
         self.telegram_notifier = TelegramNotifier(
-            bot_token=tg_cfg.get("bot_token", ""),
-            chat_id=tg_cfg.get("chat_id", ""),
+            bot_token=bot_token,
+            chat_id=chat_id,
             car_number=veh_cfg.get("car_number", "EGY-7894"),
             latitude=veh_cfg.get("latitude", 31.209093),
             longitude=veh_cfg.get("longitude", 29.923094),
@@ -108,7 +95,7 @@ class DrowsinessDetector:
         self.pullover_initiated = False
         self.vehicle_is_stopped = False
         self.emergency_alerts_sent = False
-        self.last_in_cabin_alert_time: float = 0.0
+        self.last_local_warning_time: float = 0.0
         self.awake_confirm_frames: int = 0
 
         # MediaPipe Face Mesh
@@ -182,13 +169,13 @@ class DrowsinessDetector:
             status_text = f"CALIBRATING BASELINE: {int(self.calibrator.progress_ratio * 100)}% (Look ahead normally)"
             status_color = (255, 200, 0)
         elif self.state == "STOPPED_EMERGENCY":
-            status_text = "STAGE 3: CAR STOPPED IN RIGHT LANE - EMERGENCY ALERTS SENT!"
+            status_text = "STAGE 3: CAR STOPPED IN RIGHT LANE"
             status_color = (0, 0, 255)
         elif self.state == "PULLING_OVER":
             status_text = "STAGE 2: 5s CLOSURE - AUTONOMOUS PULL-OVER TO RIGHT LANE..."
             status_color = (0, 140, 255)
         elif self.state == "DROWSY_SLOW":
-            status_text = f"STAGE 1: 2s CLOSURE - WARNING SOUNDED & SPEED REDUCED 50% ({closed_duration:.1f}s)"
+            status_text = f"STAGE 1: 2s CLOSURE - ALARM SOUNDED & SPEED REDUCED 50% ({closed_duration:.1f}s)"
             status_color = (0, 215, 255)
         elif is_one_eye_closed:
             status_text = "STATUS: AWAKE (One Eye Winking/Closed)"
@@ -229,7 +216,7 @@ class DrowsinessDetector:
         cv2.rectangle(frame, (bar_x, bar_y), (bar_x + fill_w, bar_y + bar_h), fill_color, -1)
 
         # 3. Instruction line
-        keys_hint = "Keys: [Q] Quit | [C] Recalibrate | [T] Test Call | [R] Reset Alert"
+        keys_hint = "Keys: [Q] Quit | [C] Recalibrate | [R] Reset Alert"
         cv2.putText(frame, keys_hint, (25, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (170, 170, 170), 1)
 
         # 4. Flashing Emergency Banner
@@ -267,7 +254,7 @@ class DrowsinessDetector:
                 )
                 cv2.putText(
                     frame,
-                    "EMERGENCY ALERTS DISPATCHED (TELEGRAM PIN + WHATSAPP CALL)",
+                    "TELEGRAM ALERT DISPATCHED",
                     (int(w * 0.05), int(h * 0.62)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.58,
@@ -277,7 +264,7 @@ class DrowsinessDetector:
         elif self.state == "DROWSY_SLOW":
             cv2.putText(
                 frame,
-                "STAGE 1: 2s CLOSURE - SPEED REDUCED 50% - AUDIO ALERT PLAYING",
+                "STAGE 1: 2s CLOSURE - SPEED REDUCED 50% - ALARM SOUND PLAYING",
                 (int(w * 0.03), int(h * 0.95)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
@@ -334,9 +321,7 @@ class DrowsinessDetector:
                             self.pullover_start_time = now
                             logger.warning("🚨 5s EYE CLOSURE DETECTED! Initiating autonomous right-lane pull-over...")
                             self.esp32.send_command("EMERGENCY_PULLOVER")
-                            self.alerter.play_in_cabin_alert(
-                                "Danger! Five seconds eye closure! Pulling over to right lane and stopping."
-                            )
+                            self.local_audio.play_alert()
 
                         # Check if vehicle has completed stopping
                         maneuver_elapsed = now - (self.pullover_start_time or now)
@@ -347,14 +332,9 @@ class DrowsinessDetector:
                             # STAGE 3: Send emergency alert once vehicle is stopped
                             if not self.emergency_alerts_sent:
                                 self.emergency_alerts_sent = True
-                                logger.warning("🛑 VEHICLE FULLY STOPPED IN RIGHT LANE! Sending emergency alerts...")
+                                logger.warning("🛑 VEHICLE FULLY STOPPED IN RIGHT LANE! Sending configured Telegram alert...")
 
-                                # 1. Trigger WhatsApp voice call & text
-                                self.alerter.trigger_emergency(
-                                    reason="Driver asleep for >5s! Vehicle pulled over to right lane and stopped safely."
-                                )
-
-                                # 2. Telegram Alert with interactive map pin
+                                # Telegram alert with an interactive map pin
                                 if self.telegram_enabled:
                                     real_lat, real_lon, real_loc_name, maps_url = self.location_service.get_location()
                                     self.telegram_notifier.send_emergency_alert(
@@ -366,24 +346,22 @@ class DrowsinessDetector:
                                         force=True,
                                     )
 
-                            # In-cabin voice alarm repeats every 3s as long as eyes remain closed
-                            if now - self.last_in_cabin_alert_time >= self.in_cabin_repeat_interval:
-                                self.last_in_cabin_alert_time = now
-                                self.alerter.play_in_cabin_alert(
-                                    "Warning! Driver sleeping! Vehicle stopped in right lane! Emergency alerts dispatched!"
-                                )
+                            # Local alarm sound repeats at the configured interval while eyes remain closed
+                            if now - self.last_local_warning_time >= self.local_audio_repeat_interval:
+                                self.last_local_warning_time = now
+                                self.local_audio.play_alert()
                         else:
                             self.state = "PULLING_OVER"
 
                     elif closed_duration >= self.speed_reduce_warning_seconds:
-                        # STAGE 1: 2.0 seconds reached -> Play alert and reduce speed by 50%
+                        # STAGE 1: 2.0 seconds reached -> Play alarm and reduce speed by 50%
                         self.state = "DROWSY_SLOW"
                         if not self.speed_reduced:
                             self.speed_reduced = True
-                            logger.warning("⚠️ 2s EYE CLOSURE DETECTED! Warning sounded and speed reduced by 50%.")
+                            logger.warning("⚠️ 2s EYE CLOSURE DETECTED! Alarm sounded and speed reduced by 50%.")
                             self.esp32.send_command("SLOW_50")
-                            self.alerter.play_in_cabin_alert("Warning! Wake up! Speed reduced by 50 percent!")
-                            self.last_in_cabin_alert_time = now
+                            self.local_audio.play_alert()
+                            self.last_local_warning_time = now
                     else:
                         self.state = "AWAKE"
                 else:
@@ -457,9 +435,6 @@ class DrowsinessDetector:
                 elif key == ord("c"):
                     logger.info("Resetting calibration on user request.")
                     self.calibrator.reset()
-                elif key == ord("t"):
-                    logger.info("Manual test of WhatsApp voice call triggered via 'T' key.")
-                    self.alerter.trigger_emergency(reason="Manual test alert from Driver Safety System.")
                 elif key == ord("r"):
                     logger.info("Emergency state reset on user request.")
                     self.emergency_alerts_sent = False

@@ -1,9 +1,9 @@
 """
 Integration test for DrowsinessDetector end-to-end logic.
 Simulates frames passing through calibration and the 3-stage emergency response:
-- Stage 1: At 2.0s eye closure, audio alert plays & car reduces speed by 50% (SLOW_50)
+- Stage 1: At 2.0s eye closure, alarm sound plays & car reduces speed by 50% (SLOW_50)
 - Stage 2: At 5.0s eye closure, car initiates right-lane pull-over (EMERGENCY_PULLOVER)
-- Stage 3: After full stop, emergency alerts (Telegram pin + WhatsApp voice call) are sent
+- Stage 3: After full stop, the optional Telegram alert is sent
 - Waking up between 2s and 5s immediately restores NORMAL speed
 - 15 consecutive awake frames re-arm the emergency alert system
 """
@@ -22,12 +22,11 @@ class TestDrowsinessPipeline(unittest.TestCase):
         self.detector.speed_reduce_warning_seconds = 0.2
         self.detector.pullover_emergency_seconds = 0.5
         self.detector.maneuver_duration_seconds = 0.3
-        self.detector.in_cabin_repeat_interval = 0.1
+        self.detector.local_audio_repeat_interval = 0.1
 
         # Mocks
         self.detector.esp32.send_command = MagicMock(return_value=True)
-        self.detector.alerter.trigger_emergency = MagicMock()
-        self.detector.alerter.play_in_cabin_alert = MagicMock()
+        self.detector.local_audio.play_alert = MagicMock()
         self.detector.telegram_notifier.send_emergency_alert = MagicMock()
         self.detector.telegram_enabled = True
 
@@ -73,7 +72,7 @@ class TestDrowsinessPipeline(unittest.TestCase):
                         self.detector.pullover_initiated = True
                         self.detector.pullover_start_time = now
                         self.detector.esp32.send_command("EMERGENCY_PULLOVER")
-                        self.detector.alerter.play_in_cabin_alert("Danger! Pulling over.")
+                        self.detector.local_audio.play_alert()
 
                     maneuver_elapsed = now - (self.detector.pullover_start_time or now)
                     if self.detector.vehicle_is_stopped or maneuver_elapsed >= self.detector.maneuver_duration_seconds:
@@ -81,7 +80,6 @@ class TestDrowsinessPipeline(unittest.TestCase):
                         self.detector.state = "STOPPED_EMERGENCY"
                         if not self.detector.emergency_alerts_sent:
                             self.detector.emergency_alerts_sent = True
-                            self.detector.alerter.trigger_emergency(reason="Stopped safely.")
                             if self.detector.telegram_enabled:
                                 lat, lon, name, url = self.detector.location_service.get_location()
                                 self.detector.telegram_notifier.send_emergency_alert(
@@ -99,7 +97,7 @@ class TestDrowsinessPipeline(unittest.TestCase):
                     if not self.detector.speed_reduced:
                         self.detector.speed_reduced = True
                         self.detector.esp32.send_command("SLOW_50")
-                        self.detector.alerter.play_in_cabin_alert("Warning! Speed reduced by 50 percent!")
+                        self.detector.local_audio.play_alert()
                 else:
                     self.detector.state = "AWAKE"
             else:
@@ -133,13 +131,13 @@ class TestDrowsinessPipeline(unittest.TestCase):
         self.assertEqual(self.detector.state, "AWAKE")
         self.assertFalse(self.detector.speed_reduced)
 
-        # --- Stage 1: At 2.0s (0.2s in test) -> DROWSY_SLOW, SLOW_50 sent, Audio Alert ---
+        # --- Stage 1: At 2.0s (0.2s in test) -> DROWSY_SLOW, SLOW_50 sent, Alarm sound ---
         self.detector.eye_closed_start_time = time.time() - 0.25
         simulate_eye_frame(0.08, 0.08)
         self.assertEqual(self.detector.state, "DROWSY_SLOW")
         self.assertTrue(self.detector.speed_reduced)
         self.detector.esp32.send_command.assert_called_with("SLOW_50")
-        self.detector.alerter.play_in_cabin_alert.assert_called_with("Warning! Speed reduced by 50 percent!")
+        self.detector.local_audio.play_alert.assert_called_with()
 
         # --- Stage 2: At 5.0s (0.5s in test) -> PULLING_OVER, EMERGENCY_PULLOVER sent ---
         self.detector.eye_closed_start_time = time.time() - 0.55
@@ -157,7 +155,6 @@ class TestDrowsinessPipeline(unittest.TestCase):
         self.assertEqual(self.detector.state, "STOPPED_EMERGENCY")
         self.assertTrue(self.detector.vehicle_is_stopped)
         self.assertTrue(self.detector.emergency_alerts_sent)
-        self.detector.alerter.trigger_emergency.assert_called_once()
         self.detector.telegram_notifier.send_emergency_alert.assert_called_once()
 
     def test_recovery_during_stage_1(self):
