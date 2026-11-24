@@ -321,7 +321,7 @@ class DrowsinessDetector:
                             self.pullover_start_time = now
                             logger.warning("🚨 5s EYE CLOSURE DETECTED! Initiating autonomous right-lane pull-over...")
                             self.esp32.send_command("EMERGENCY_PULLOVER")
-                            self.local_audio.play_alert()
+                            self.local_audio.play_alert("danger")
 
                         # Check if vehicle has completed stopping
                         maneuver_elapsed = now - (self.pullover_start_time or now)
@@ -349,7 +349,7 @@ class DrowsinessDetector:
                             # Local alarm sound repeats at the configured interval while eyes remain closed
                             if now - self.last_local_warning_time >= self.local_audio_repeat_interval:
                                 self.last_local_warning_time = now
-                                self.local_audio.play_alert()
+                                self.local_audio.play_alert("danger")
                         else:
                             self.state = "PULLING_OVER"
 
@@ -360,7 +360,7 @@ class DrowsinessDetector:
                             self.speed_reduced = True
                             logger.warning("⚠️ 2s EYE CLOSURE DETECTED! Alarm sounded and speed reduced by 50%.")
                             self.esp32.send_command("SLOW_50")
-                            self.local_audio.play_alert()
+                            self.local_audio.play_alert("warning")
                             self.last_local_warning_time = now
                     else:
                         self.state = "AWAKE"

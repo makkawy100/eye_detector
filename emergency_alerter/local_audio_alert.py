@@ -1,9 +1,6 @@
-"""Local-only audible alert. Speaks a clear "Wake up!" voice prompt, fully offline.
+"""Local-only spoken drowsiness alerts, bundled as WAV files for offline use.
 
-The voice prompt is a small WAV file bundled with the project
-(``sounds/wake_up.wav``), so no speech engine, network service, or extra
-package is needed at runtime. If the file is ever missing, a synthesized
-two-tone alarm is used instead so the driver still gets a loud warning.
+If a voice file is missing, a synthesized two-tone alarm is used instead.
 """
 
 import logging
@@ -20,8 +17,12 @@ from pathlib import Path
 
 logger = logging.getLogger("LocalAudioAlert")
 
-# Bundled spoken prompt, played as-is. Natural voice, generated offline.
-_VOICE_WAV = Path(__file__).resolve().parent / "sounds" / "wake_up.wav"
+# Bundled spoken prompts, generated offline with Piper.
+_SOUND_DIR = Path(__file__).resolve().parent / "sounds"
+_VOICE_WAVS = {
+    "warning": _SOUND_DIR / "wake_up.wav",
+    "danger": _SOUND_DIR / "danger.wav",
+}
 
 
 class LocalAudioAlert:
@@ -72,8 +73,13 @@ class LocalAudioAlert:
             return True
         return False
 
-    def play_alert(self, _message: str = ""):
-        """Play the spoken "Wake up!" prompt locally; no network or cloud services."""
+    def play_alert(self, alert_type: str = "warning"):
+        """Play a bundled spoken alert locally; no network or cloud services.
+
+        ``warning`` is the 2-second closure message; ``danger`` is the 5-second
+        closure message and the repeat message after an emergency stop.
+        """
+        voice_wav = _VOICE_WAVS.get(alert_type, _VOICE_WAVS["warning"])
         now = time.time()
         with self._lock:
             if now - self._last_play_time < self.minimum_interval_seconds or self._playing:
@@ -84,8 +90,8 @@ class LocalAudioAlert:
         def play():
             try:
                 played = False
-                if _VOICE_WAV.is_file():
-                    played = self._play_wav(_VOICE_WAV)
+                if voice_wav.is_file():
+                    played = self._play_wav(voice_wav)
                 if not played:
                     # Voice file missing or no player found: fall back to the
                     # synthesized alarm so the warning is still audible.
