@@ -23,18 +23,14 @@ The ESP32, steering and braking behavior depends on external hardware and firmwa
 
 ## How to launch
 
-Open a terminal in the project folder, then install the dependencies and start the detector:
+From the project folder, run:
 
 ```bash
-git clone https://github.com/makkawy100/eye_detector.git
-cd eye_detector
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
 python3 main.py
 ```
 
-The detector can run without Telegram credentials. To enable optional Telegram alerts, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in your shell environment before starting it. Do not save those values in the repository. To send a Telegram test alert and exit, run `python3 main.py --test-telegram` after setting them.
+Dependencies: install packages listed in `requirements.txt` if they are not already installed.
+
 Run tests with `PYTHONPATH=. python3 -m unittest discover tests`.
 
 Press `Q` to quit, `C` to recalibrate, and `R` to reset the emergency state.
