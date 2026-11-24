@@ -21,10 +21,20 @@ The ESP32, steering and braking behavior depends on external hardware and firmwa
 - `tests/`: unit and pipeline tests.
 - `config.json`: non-secret settings.
 
-## Setup
+## How to launch
 
-Install dependencies: `pip install -r requirements.txt`. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the process environment to enable Telegram alerts, for example by exporting them in your shell before launch. The names can be changed with `alerter.telegram.bot_token_env` and `alerter.telegram.chat_id_env` in `config.json`. Do not put credentials in tracked files. To run the detector with `python3 main.py`; to test the Telegram notifier use `python3 main.py --test-telegram`.
+Open a terminal in the project folder, then install the dependencies and start the detector:
 
+```bash
+git clone https://github.com/makkawy100/eye_detector.git
+cd eye_detector
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+python3 main.py
+```
+
+The detector can run without Telegram credentials. To enable optional Telegram alerts, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in your shell environment before starting it. Do not save those values in the repository. To send a Telegram test alert and exit, run `python3 main.py --test-telegram` after setting them.
 Run tests with `PYTHONPATH=. python3 -m unittest discover tests`.
 
 Press `Q` to quit, `C` to recalibrate, and `R` to reset the emergency state.
